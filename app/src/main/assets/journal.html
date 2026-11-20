@@ -140,14 +140,7 @@
     display: flex;
     flex-direction: column;
   }
-  .topbar {
-    position: sticky; top: 0; z-index: 50;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 32px;
-    display: flex; align-items: center; justify-content: space-between;
-    transition: background 0.3s;
-  }
+  .topbar { display: none !important; }
   .topbar h2 {
     font-family: var(--font-display);
     font-size: 1.4rem;
@@ -157,6 +150,36 @@
     font-size: 0.8rem;
     color: var(--text2);
     font-family: var(--font-mono);
+  }
+  .sidebar-clock {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text2);
+    text-align: center;
+    margin-bottom: 10px;
+    padding: 6px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  #live-clock-mobile {
+    position: fixed;
+    top: 8px; right: 10px;
+    z-index: 60;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    color: var(--text2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+    box-shadow: var(--shadow);
+    display: none;
+  }
+  @media (max-width: 900px) {
+    #live-clock-mobile { display: inline-block; }
   }
   .page { display: none; padding: 32px; max-width: 900px; margin: 0 auto; width: 100%; }
   .page.active { display: block; }
@@ -1064,6 +1087,7 @@ if(_lockEnabled())lockOpen('unlock',null);
 
   </div>
   <div class="sidebar-footer">
+    <div class="sidebar-clock" id="live-clock"></div>
     <button class="theme-toggle" onclick="toggleTheme()">
       <span>🌙 Dark Mode</span>
       <div class="toggle-pill" id="dark-toggle"><div class="toggle-knob"></div></div>
@@ -1089,10 +1113,8 @@ if(_lockEnabled())lockOpen('unlock',null);
 
 <!-- MAIN -->
 <div id="main">
-  <div class="topbar">
-    <h2 id="page-title">New Entry</h2>
-    <span class="topbar-meta" id="live-clock"></span>
-  </div>
+  <span id="page-title" style="display:none">New Entry</span>
+  <div id="live-clock-mobile"></div>
 
   <!-- Global Auto-Sync Progress Bar (auto sync on hone par dikhta hai) -->
   <div id="autosync-bar-wrap" style="display:none;padding:8px 16px;background:var(--surface);border-bottom:1px solid var(--border);">
@@ -1326,8 +1348,8 @@ if(_lockEnabled())lockOpen('unlock',null);
     <div style="background:var(--surface);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow);">
       <textarea id="bd-input" placeholder="Kuch bhi likho — idea, task, reminder..." style="margin-bottom:12px;min-height:72px;resize:vertical;"></textarea>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-        <select id="bd-category"></select>
-        <select id="bd-priority">
+        <select id="bd-category" onchange="localStorage.setItem('bd__last_cat', this.value)"></select>
+        <select id="bd-priority" onchange="localStorage.setItem('bd__last_priority', this.value)">
           <option value="low">🟢 Low</option>
           <option value="medium">🟡 Medium</option>
           <option value="high">🔴 High</option>
@@ -2923,11 +2945,14 @@ function refreshPage() {
 function startClock() {
   function tick() {
     const now = new Date();
-    const isMobile = window.innerWidth <= 700;
-    document.getElementById('live-clock').textContent = isMobile
-      ? now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' })
-      : now.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
-    document.getElementById('entry-datetime').textContent = '📅 ' + now.toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' });
+    const timeStr = now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
+    const fullStr = now.toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const elS = document.getElementById('live-clock');
+    if (elS) elS.textContent = fullStr;
+    const elM = document.getElementById('live-clock-mobile');
+    if (elM) elM.textContent = '🕐 ' + timeStr;
+    const elDt = document.getElementById('entry-datetime');
+    if (elDt) elDt.textContent = '📅 ' + now.toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' });
   }
   tick(); setInterval(tick, 1000);
 }
@@ -5569,13 +5594,14 @@ async function loadBDCategoriesFromFlask() {
 function renderBDCategorySelect() {
   const sel = document.getElementById('bd-category');
   if (!sel) return;
-  // Jo category pehle se selected hai, use yaad rakho
-  const prevSelected = sel.value;
+  const saved = localStorage.getItem('bd__last_cat') || '';
+  const prevSelected = sel.value || saved;
   const cats = getBDCategories();
-  // Dropdown ko dobara banao, lekin pehle wali category ko selected rakho (agar maujood ho)
-  sel.innerHTML = cats.map(c => 
+  sel.innerHTML = cats.map(c =>
     `<option value="${c.id}" ${c.id === prevSelected ? 'selected' : ''}>${c.label}</option>`
   ).join('');
+  if (cats.some(c => c.id === saved)) sel.value = saved;
+  if (sel.value) localStorage.setItem('bd__last_cat', sel.value);
 }
 
 function renderBDCategoryManager() {
@@ -5629,6 +5655,9 @@ function addBrainDump() {
   const cats = getBDCategories();
   const cat = cats.find(c => c.id === catId) || {id: catId, label: catId};
   const priority = document.getElementById('bd-priority').value;
+  // Selected category + priority ko yaad rakho (agla open hone par restore ke liye)
+  localStorage.setItem('bd__last_cat', catId);
+  localStorage.setItem('bd__last_priority', priority);
   const taskDate = document.getElementById('bd-task-date').value || null;
   const deadline = document.getElementById('bd-deadline').value || null;
   const items = getBDItems();
@@ -5692,6 +5721,12 @@ function renderBDList() {
   renderBDCategorySelect();
   renderBDCategoryManager();
   populateBDFilterDropdown();
+  // Priority dropdown ka last selection restore karo
+  const prioEl = document.getElementById('bd-priority');
+  if (prioEl) {
+    const savedPrio = localStorage.getItem('bd__last_priority');
+    if (savedPrio && ['low','medium','high'].includes(savedPrio)) prioEl.value = savedPrio;
+  }
   const items = getBDItems();
   const list = document.getElementById('bd-list');
   const stats = document.getElementById('bd-stats');
