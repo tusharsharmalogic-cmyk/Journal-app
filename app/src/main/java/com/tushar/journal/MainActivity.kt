@@ -1,0 +1,135 @@
+package com.tushar.journal
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var webView: WebView
+    private var fileCallback: ValueCallback<Array<Uri>>? = null
+
+    companion object {
+        private const val TERMUX_PERM = "com.termux.permission.RUN_COMMAND"
+        private const val FILE_REQ = 1001
+        private const val PERM_REQ = 1002
+        private const val START_SCRIPT = "/data/data/com.termux/files/home/start_journal.sh"
+        private const val TERMUX_BASH = "/data/data/com.termux/files/usr/bin/bash"
+        private const val TERMUX_HOME = "/data/data/com.termux/files/home"
+    }
+
+    inner class Bridge {
+        @JavascriptInterface
+        fun ensureServer() {
+            startTermuxServer()
+        }
+
+        @JavascriptInterface
+        fun toast(msg: String) {
+            runOnUiThread { Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // RUN_COMMAND runtime permission
+        if (ContextCompat.checkSelfPermission(this, TERMUX_PERM) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(TERMUX_PERM), PERM_REQ)
+        }
+
+        webView = WebView(this)
+        setContentView(webView)
+
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            cacheMode = WebSettings.LOAD_DEFAULT
+        }
+
+        @Suppress("DEPRECATION")
+        webView.settings.allowUniversalAccessFromFileURLs = true
+
+        webView.addJavascriptInterface(Bridge(), "Android")
+        webView.webViewClient = WebViewClient()
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                view: WebView?,
+                callback: ValueCallback<Array<Uri>>?,
+                params: FileChooserParams?
+            ): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                return try {
+                    startActivityForResult(params!!.createIntent(), FILE_REQ)
+                    true
+                } catch (e: Exception) {
+                    fileCallback = null
+                    false
+                }
+            }
+        }
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (webView.canGoBack()) webView.goBack() else finish()
+            }
+        })
+
+        webView.loadUrl("file:///android_asset/journal.html")
+    }
+
+    private fun startTermuxServer() {
+        try {
+            val intent = Intent("com.termux.RUN_COMMAND").apply {
+                setClassName("com.termux", "com.termux.app.RunCommandService")
+                putExtra("com.termux.RUN_COMMAND_PATH", TERMUX_BASH)
+                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf(START_SCRIPT))
+                putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
+                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+            }
+            startService(intent)
+        } catch (e: Exception) {
+            runOnUiThread {
+                Toast.makeText(this, "Termux start fail: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == FILE_REQ) {
+            val result = if (resultCode == Activity.RESULT_OK)
+                WebChromeClient.FileChooserParams.parseResult(resultCode, data) else null
+            fileCallback?.onReceiveValue(result)
+            fileCallback = null
+        } else {
+            @Suppress("DEPRECATION")
+            super.onActivityResult(requestCode, resultCode, data)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // App background mein jaye to pending drafts device par flush karo
+        webView.evaluateJavascript("try{saveDraft();flushDrafts();}catch(e){}", null)
+    }
+}
