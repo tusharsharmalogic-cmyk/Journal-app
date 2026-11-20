@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Left page -->
+    <path
+        android:fillColor="#C17F4A"
+        android:pathData="M54,42 L32,37 L32,72 L54,77 Z" />
+    <!-- Right page -->
+    <path
+        android:fillColor="#D4914F"
+        android:pathData="M54,42 L76,37 L76,72 L54,77 Z" />
+    <!-- Spine -->
+    <path
+        android:strokeColor="#1A1612"
+        android:strokeWidth="1.5"
+        android:pathData="M54,42 L54,77" />
+    <!-- Text lines left -->
+    <path
+        android:strokeColor="#1A1612"
+        android:strokeAlpha="0.45"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:pathData="M37,47 L49,49.5 M37,54 L49,56.5 M37,61 L49,63.5" />
+    <!-- Text lines right -->
+    <path
+        android:strokeColor="#1A1612"
+        android:strokeAlpha="0.45"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round"
+        android:pathData="M59,49.5 L66,48 M59,56.5 L66,55" />
+    <!-- Pen body -->
+    <path
+        android:fillColor="#F0E8DF"
+        android:pathData="M74,26 L80,32 L66,52 L60,50 L58,44 Z" />
+    <!-- Pen tip -->
+    <path
+        android:fillColor="#1A1612"
+        android:pathData="M60,50 L58,44 L56,52 Z" />
+</vector>
