@@ -856,7 +856,9 @@
   #lock-overlay .lk-icon{font-size:3rem;margin-bottom:6px;}
   #lock-overlay h2{margin:0 0 6px;font-size:1.3rem;color:var(--text,#2b2118);}
   #lock-overlay p{margin:0 0 16px;font-size:0.88rem;color:var(--text2,#7a6a58);}
-  #lk-input{width:100%;box-sizing:border-box;text-align:center;font-size:1.6rem;letter-spacing:0.5em;padding:12px;border-radius:12px;border:1.5px solid var(--border,#d9cdb8);background:var(--card,#fff);color:var(--text,#2b2118);}
+  #lk-input{width:100%;box-sizing:border-box;text-align:center;font-size:1.6rem;letter-spacing:0.5em;padding:12px;border-radius:12px;border:1.5px solid var(--border,#d9cdb8);background:var(--surface2,#f0ebe4);color:var(--text,#2b2118);caret-color:var(--accent,#c17f4a);outline:none;-webkit-appearance:none;appearance:none;}
+  #lk-input:focus{border-color:var(--accent,#c17f4a);box-shadow:0 0 0 3px rgba(193,127,74,0.25);}
+  #lk-input:-webkit-autofill{-webkit-box-shadow:0 0 0 100px var(--surface2,#f0ebe4) inset;-webkit-text-fill-color:var(--text,#2b2118);}
   #lk-err{min-height:20px;margin:8px 0;font-size:0.82rem;color:#d33;}
   #lk-btn{width:100%;padding:12px;border:none;border-radius:12px;font-size:1rem;font-weight:700;background:var(--accent,#b5651d);color:#fff;}
   #lk-forgot,#lk-cancel{display:none;margin-top:14px;font-size:0.85rem;color:var(--text2,#7a6a58);text-decoration:underline;}
