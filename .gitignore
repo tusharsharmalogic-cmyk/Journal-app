@@ -1,4 +1,7 @@
 build/
 .gradle/
 *.apk
-local.properties
+local.propertiesjournal.p12
+*.p12
+*.jks
+*.keystore

@@ -15,9 +15,30 @@ android {
         versionName "1.0"
     }
 
+    signingConfigs {
+        journal {
+            def ks = rootProject.file('journal.p12')
+            if (ks.exists() && System.getenv('KEYSTORE_PASSWORD')) {
+                storeFile ks
+                storeType 'pkcs12'
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias 'journal'
+                keyPassword System.getenv('KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (rootProject.file('journal.p12').exists() && System.getenv('KEYSTORE_PASSWORD')) {
+                signingConfig signingConfigs.journal
+            }
+        }
         release {
             minifyEnabled false
+            if (rootProject.file('journal.p12').exists() && System.getenv('KEYSTORE_PASSWORD')) {
+                signingConfig signingConfigs.journal
+            }
         }
     }
 

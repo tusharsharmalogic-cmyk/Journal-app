@@ -23,7 +23,16 @@ jobs:
         with:
           gradle-version: 8.5
 
+      - name: Decode keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          echo "$KEYSTORE_B64" | tr -d ' \n\r' | base64 -d > journal.p12
+          ls -la journal.p12
+
       - name: Build debug APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: gradle assembleDebug --stacktrace
 
       - name: Upload APK
