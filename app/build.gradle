@@ -21,9 +21,9 @@ android {
             if (ks.exists() && System.getenv('KEYSTORE_PASSWORD')) {
                 storeFile ks
                 storeType 'pkcs12'
-                storePassword System.getenv('KEYSTORE_PASSWORD')
+                storePassword System.getenv('KEYSTORE_PASSWORD').replaceAll('[^0-9a-fA-F]', '')
                 keyAlias 'journal'
-                keyPassword System.getenv('KEYSTORE_PASSWORD')
+                keyPassword System.getenv('KEYSTORE_PASSWORD').replaceAll('[^0-9a-fA-F]', '')
             }
         }
     }
