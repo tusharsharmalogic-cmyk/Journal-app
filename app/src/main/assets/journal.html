@@ -849,6 +849,178 @@
 </head>
 <body>
 
+<!-- ===== APP LOCK (PIN) ===== -->
+<style>
+  #lock-overlay{position:fixed;inset:0;z-index:2147483000;background:var(--bg,#faf6ee);display:none;align-items:center;justify-content:center;padding:20px;}
+  #lock-overlay .lk-box{width:100%;max-width:320px;text-align:center;}
+  #lock-overlay .lk-icon{font-size:3rem;margin-bottom:6px;}
+  #lock-overlay h2{margin:0 0 6px;font-size:1.3rem;color:var(--text,#2b2118);}
+  #lock-overlay p{margin:0 0 16px;font-size:0.88rem;color:var(--text2,#7a6a58);}
+  #lk-input{width:100%;box-sizing:border-box;text-align:center;font-size:1.6rem;letter-spacing:0.5em;padding:12px;border-radius:12px;border:1.5px solid var(--border,#d9cdb8);background:var(--card,#fff);color:var(--text,#2b2118);}
+  #lk-err{min-height:20px;margin:8px 0;font-size:0.82rem;color:#d33;}
+  #lk-btn{width:100%;padding:12px;border:none;border-radius:12px;font-size:1rem;font-weight:700;background:var(--accent,#b5651d);color:#fff;}
+  #lk-forgot,#lk-cancel{display:none;margin-top:14px;font-size:0.85rem;color:var(--text2,#7a6a58);text-decoration:underline;}
+</style>
+<div id="lock-overlay">
+  <div class="lk-box">
+    <div class="lk-icon">🔒</div>
+    <h2 id="lk-title">Journal</h2>
+    <p id="lk-msg"></p>
+    <input type="password" id="lk-input" inputmode="numeric" maxlength="12" autocomplete="off">
+    <div id="lk-err"></div>
+    <button id="lk-btn" onclick="lockSubmit()">Unlock</button>
+    <div id="lk-forgot" onclick="lockOpen('backup')">Forgot PIN? Backup PIN use karo</div>
+    <div id="lk-cancel" onclick="lockCancel()">Cancel</div>
+  </div>
+</div>
+<script>
+// SHA-256 (pure JS, koi crypto.subtle ki zarurat nahi)
+function _rr(v,a){return ((v>>a)&((1<<(32-a))-1))|(v<<(32-a));}
+function _sha256(ascii){
+  var mp=Math.pow,mw=mp(2,32),i,j,result='';
+  var words=[],bitLen=ascii.length*8;
+  var hash=_sha256.h=_sha256.h||[],k=_sha256.k=_sha256.k||[],pc=k.length,comp={};
+  for(var c=2;pc<64;c++){
+    if(!comp[c]){
+      for(i=0;i<313;i+=c)comp[i]=c;
+      hash[pc]=(mp(c,0.5)*mw)|0;
+      k[pc++]=(mp(c,1/3)*mw)|0;
+    }
+  }
+  ascii+='\x80';
+  while(ascii.length%64-56)ascii+='\x00';
+  for(i=0;i<ascii.length;i++){
+    j=ascii.charCodeAt(i);
+    words[i>>2]|=j<<((3-i)%4)*8;
+  }
+  words[words.length]=((bitLen/mw)|0);
+  words[words.length]=bitLen;
+  for(j=0;j<words.length;){
+    var w=words.slice(j,j+=16),old=hash;
+    hash=hash.slice(0,8);
+    for(i=0;i<64;i++){
+      var w15=w[i-15],w2=w[i-2],a=hash[0],e=hash[4];
+      var t1=hash[7]+(_rr(e,6)^_rr(e,11)^_rr(e,25))+((e&hash[5])^((~e)&hash[6]))+k[i]+
+        (w[i]=(i<16)?w[i]:(w[i-16]+(_rr(w15,7)^_rr(w15,18)^((w15>>3)&0x1FFFFFFF))+w[i-7]+(_rr(w2,17)^_rr(w2,19)^((w2>>10)&0x3FFFFF))|0));
+      var t2=(_rr(a,2)^_rr(a,13)^_rr(a,22))+((a&hash[1])^(a&hash[2])^(hash[1]&hash[2]));
+      hash=[(t1+t2)|0].concat(hash);
+      hash[4]=(hash[4]+t1)|0;
+    }
+    for(i=0;i<8;i++)hash[i]=(hash[i]+old[i])|0;
+  }
+  for(i=0;i<8;i++){
+    var hi=(hash[i]>>16)&0xffff,lo=hash[i]&0xffff;
+    result+=('0000'+hi.toString(16)).slice(-4)+('0000'+lo.toString(16)).slice(-4);
+  }
+  return result;
+}
+
+// ---- Lock config (sirf localStorage — server/Drive par nahi jata) ----
+function _lockCfg(){try{return JSON.parse(localStorage.getItem('app_lock')||'null');}catch(e){return null;}}
+function _lockEnabled(){var c=_lockCfg();return !!(c&&c.enabled&&c.pin);}
+function _lkHash(pin,salt){return _sha256(salt+':'+pin);}
+function _lkCheck(pin,hash,salt){return _lkHash(pin,salt)===hash;}
+function _lkSalt(){var s='';for(var i=0;i<16;i++)s+=Math.floor(Math.random()*16).toString(16);return s+Date.now().toString(16);}
+
+var _lk={mode:'unlock',after:null,main:null,bk:null,fails:0,until:0};
+var _lkHiddenAt=0;
+
+function lockOpen(mode,after){
+  _lk.mode=mode;
+  if(after!==undefined)_lk.after=after;
+  var T={
+    unlock:['🔒 Journal Locked','PIN daalo','Unlock'],
+    backup:['🔑 Backup PIN','Backup PIN daalo','Unlock'],
+    reset:['🆕 Naya Main PIN','Naya PIN set karo (4-12 digit)','Next'],
+    reset2:['🆕 Naya Main PIN','Wahi PIN dobara daalo','Save'],
+    setup1:['🔐 PIN Set Karo','Main PIN (4-12 digit)','Next'],
+    setup2:['🔐 PIN Confirm','Wahi PIN dobara daalo','Next'],
+    bsetup1:['🔑 Backup PIN Set Karo','Backup PIN (main se alag hona chahiye)','Next'],
+    bsetup2:['🔑 Backup Confirm','Backup PIN dobara daalo','Save'],
+    verify:['🔐 PIN Verify','Current main PIN daalo','Confirm']
+  }[mode];
+  document.getElementById('lk-title').textContent=T[0];
+  document.getElementById('lk-msg').textContent=T[1];
+  document.getElementById('lk-btn').textContent=T[2];
+  document.getElementById('lk-err').textContent='';
+  var inp=document.getElementById('lk-input');inp.value='';
+  document.getElementById('lk-forgot').style.display=(mode==='unlock'?'block':'none');
+  document.getElementById('lk-cancel').style.display=(mode==='unlock'||mode==='backup'||mode==='reset'||mode==='reset2')?'none':'block';
+  if(mode==='backup'){document.getElementById('lk-cancel').style.display='block';}
+  document.getElementById('lock-overlay').style.display='flex';
+  setTimeout(function(){inp.focus();},50);
+}
+function _lkClose(){document.getElementById('lock-overlay').style.display='none';_lk.main=null;_lk.bk=null;_lk.after=null;_lk.fails=0;}
+function lockCancel(){
+  if(_lk.mode==='backup'){lockOpen('unlock');return;}
+  _lkClose();
+  if(typeof lockRefreshUI==='function')lockRefreshUI();
+}
+function _lkErr(m){document.getElementById('lk-err').textContent=m;document.getElementById('lk-input').value='';}
+function lockSubmit(){
+  var v=document.getElementById('lk-input').value.trim();
+  var cfg=_lockCfg()||{};
+  var m=_lk.mode,now=Date.now();
+  if((m==='unlock'||m==='backup'||m==='verify')&&now<_lk.until){
+    _lkErr('Bahut galat try — '+Math.ceil((_lk.until-now)/1000)+' sec ruko');return;
+  }
+  if(m==='unlock'||m==='verify'||m==='backup'){
+    var ok=_lkCheck(v,m==='backup'?cfg.bpin:cfg.pin,cfg.salt);
+    if(!ok){
+      _lk.fails++;
+      if(_lk.fails>=5){_lk.until=now+30000;_lk.fails=0;_lkErr('5 galat try — 30 sec ruko');}
+      else _lkErr('Galat PIN');
+      return;
+    }
+    _lk.fails=0;
+    if(m==='unlock'){_lkClose();return;}
+    if(m==='backup'){lockOpen('reset');return;}
+    var cb=_lk.after;_lkClose();if(cb)cb();return;
+  }
+  if(!/^[0-9]{4,12}$/.test(v)){_lkErr('4 se 12 digit ka PIN daalo');return;}
+  if(m==='setup1'||m==='reset'){_lk.main=v;lockOpen(m==='setup1'?'setup2':'reset2');return;}
+  if(m==='setup2'||m==='reset2'){
+    if(v!==_lk.main){_lkErr('PIN match nahi hua');lockOpen(m==='setup2'?'setup1':'reset');return;}
+    if(m==='reset2'){
+      if(_lkCheck(v,cfg.bpin,cfg.salt)){_lkErr('Main PIN backup se alag hona chahiye');lockOpen('reset');return;}
+      cfg.pin=_lkHash(v,cfg.salt);cfg.enabled=true;
+      localStorage.setItem('app_lock',JSON.stringify(cfg));
+      _lkClose();if(typeof showToast==='function')showToast('✅ Naya PIN set ho gaya');
+      if(typeof lockRefreshUI==='function')lockRefreshUI();return;
+    }
+    lockOpen('bsetup1');return;
+  }
+  if(m==='bsetup1'){
+    var same=_lk.main?(v===_lk.main):_lkCheck(v,cfg.pin,cfg.salt);
+    if(same){_lkErr('Backup PIN main se alag hona chahiye');return;}
+    _lk.bk=v;lockOpen('bsetup2');return;
+  }
+  if(m==='bsetup2'){
+    if(v!==_lk.bk){_lkErr('PIN match nahi hua');lockOpen('bsetup1');return;}
+    var salt=_lk.main?_lkSalt():cfg.salt;
+    var out=_lk.main
+      ?{enabled:true,salt:salt,pin:_lkHash(_lk.main,salt),bpin:_lkHash(_lk.bk,salt)}
+      :{enabled:true,salt:salt,pin:cfg.pin,bpin:_lkHash(_lk.bk,salt)};
+    localStorage.setItem('app_lock',JSON.stringify(out));
+    _lkClose();if(typeof showToast==='function')showToast('🔐 App Lock ON');
+    if(typeof lockRefreshUI==='function')lockRefreshUI();return;
+  }
+}
+function lockSetup(){lockOpen('setup1',null);}
+function lockDisable(){lockOpen('verify',function(){localStorage.removeItem('app_lock');if(typeof showToast==='function')showToast('🔓 App Lock OFF');if(typeof lockRefreshUI==='function')lockRefreshUI();});}
+function lockChangePin(){lockOpen('verify',function(){lockOpen('reset');});}
+function lockChangeBackup(){lockOpen('verify',function(){_lk.main=null;lockOpen('bsetup1');});}
+
+document.getElementById('lk-input').addEventListener('keydown',function(e){if(e.key==='Enter')lockSubmit();});
+document.addEventListener('visibilitychange',function(){
+  if(document.visibilityState==='hidden'){_lkHiddenAt=Date.now();}
+  else if(_lockEnabled()&&_lkHiddenAt&&Date.now()-_lkHiddenAt>30000&&document.getElementById('lock-overlay').style.display!=='flex'){lockOpen('unlock',null);}
+});
+// App open par lock
+if(_lockEnabled())lockOpen('unlock',null);
+</script>
+<!-- ===== /APP LOCK ===== -->
+
 <!-- SIDEBAR -->
 <nav id="sidebar">
   <div class="sidebar-logo">
@@ -1359,6 +1531,38 @@
   <!-- ======= SETTINGS PAGE ======= -->
   <div class="page" id="page-settings">
     <div class="section-header"><h2>Settings</h2></div>
+
+    <div class="settings-section">
+      <h3>🔐 App Lock</h3>
+      <p style="font-size:0.82rem;color:var(--text2);margin-bottom:12px;">ON karne par app kholte hi PIN maangega. Backup PIN se Forgot PIN karke naya main PIN set kar sakte ho. PIN sirf is phone mein save hota hai (hash ke roop mein).</p>
+      <div class="setting-row">
+        <div class="setting-info"><h4>App Lock</h4><p id="lock-status-text">OFF</p></div>
+        <button class="btn btn-outline btn-sm" id="lock-toggle-btn" onclick="lockToggle()">Turn ON</button>
+      </div>
+      <div id="lock-extra" style="display:none;">
+        <div class="setting-row">
+          <div class="setting-info"><h4>Main PIN badlo</h4><p>Pehle current PIN verify hoga</p></div>
+          <button class="btn btn-outline btn-sm" onclick="lockChangePin()">Change</button>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info"><h4>Backup PIN badlo</h4><p>Forgot PIN ke liye</p></div>
+          <button class="btn btn-outline btn-sm" onclick="lockChangeBackup()">Change</button>
+        </div>
+      </div>
+    </div>
+    <script>
+    function lockRefreshUI(){
+      var on=_lockEnabled();
+      var s=document.getElementById('lock-status-text');
+      var b=document.getElementById('lock-toggle-btn');
+      var x=document.getElementById('lock-extra');
+      if(s)s.textContent=on?'ON — app open par PIN maangega':'OFF';
+      if(b)b.textContent=on?'Turn OFF':'Turn ON';
+      if(x)x.style.display=on?'block':'none';
+    }
+    function lockToggle(){ if(_lockEnabled())lockDisable(); else lockSetup(); }
+    lockRefreshUI();
+    </script>
 
     <div class="settings-section">
       <h3>🎨 Appearance</h3>
